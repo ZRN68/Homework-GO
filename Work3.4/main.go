@@ -40,6 +40,3 @@ func main() {
 		fmt.Printf("IsPalindrome(%q) = %v (ожидалось %v)\n", t.s, got, t.want)
 	}
 }
-		fmt.Printf("IsPalindrome(%q) = %v (ожидалось %v)\n", t.s, got, t.want)
-	}
-}
