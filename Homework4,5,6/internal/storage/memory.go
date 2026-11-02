@@ -7,15 +7,13 @@ import (
 	"homework6/internal/inventory"
 )
 
-// MemoryStorage — хранилище в памяти. Соблюдает те же правила, что FileStorage:
-// тот же формат, та же политика пропуска битых строк.
+// MemoryStorage — хранилище в памяти. Соблюдает те же правила, что FileStorage.
 type MemoryStorage struct {
 	data []byte
 }
 
 func NewMemory() *MemoryStorage { return &MemoryStorage{} }
 
-// NewMemoryFromData позволяет засеять хранилище «файлом» для тестов.
 func NewMemoryFromData(data []byte) *MemoryStorage {
 	return &MemoryStorage{data: append([]byte(nil), data...)}
 }

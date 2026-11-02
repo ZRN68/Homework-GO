@@ -9,22 +9,9 @@ import (
 	"strconv"
 	"strings"
 
-	"homework6/internal/domain"
 	"homework6/internal/inventory"
+	"homework6/internal/items"
 )
-
-// ParseItemError — типизированная ошибка разбора строки.
-type ParseItemError struct {
-	Line  int
-	Value string
-	Err   error
-}
-
-func (e *ParseItemError) Error() string {
-	return fmt.Sprintf("parse error at line %d (%q): %v", e.Line, e.Value, e.Err)
-}
-
-func (e *ParseItemError) Unwrap() error { return e.Err }
 
 // FileStorage — файловое хранилище.
 type FileStorage struct {
@@ -41,7 +28,8 @@ func (s *FileStorage) Load() (*inventory.Inventory, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return inv, nil
 		}
-		return nil, fmt.Errorf("open %s: %w", s.Path, err)
+		// ВАЖНО: возвращаем не-nil инвентарь, чтобы cli не упал в panic.
+		return inv, fmt.Errorf("open %s: %w", s.Path, err)
 	}
 	defer f.Close()
 
@@ -67,66 +55,7 @@ func (s *FileStorage) Save(inv *inventory.Inventory) (err error) {
 	return nil
 }
 
-// ---------- общий формат ----------
-
-func serializeItem(id int, item domain.Item) (string, bool) {
-	switch v := item.(type) {
-	case *domain.Weapon:
-		return fmt.Sprintf("%d|Weapon|%s|%d|%d|%g\n", id, v.Title, v.Damage, v.Durability, v.Mass), true
-	case *domain.Armor:
-		return fmt.Sprintf("%d|Armor|%s|%d|%g\n", id, v.Title, v.Defense, v.Mass), true
-	case *domain.Potion:
-		return fmt.Sprintf("%d|Potion|%s|%s|%d|%g\n", id, v.Title, v.Effect, v.Charges, v.Mass), true
-	}
-	return "", false
-}
-
-func parseItemLine(line string) (domain.Item, int, error) {
-	parts := strings.Split(line, "|")
-	if len(parts) < 2 {
-		return nil, 0, fmt.Errorf("too few fields")
-	}
-	id, err := strconv.Atoi(parts[0])
-	if err != nil {
-		return nil, 0, fmt.Errorf("bad id: %w", err)
-	}
-	switch parts[1] {
-	case "Weapon":
-		if len(parts) != 6 {
-			return nil, 0, fmt.Errorf("weapon needs 6 fields, got %d", len(parts))
-		}
-		dmg, e1 := strconv.Atoi(parts[3])
-		dur, e2 := strconv.Atoi(parts[4])
-		wt, e3 := strconv.ParseFloat(parts[5], 64)
-		if err := errors.Join(e1, e2, e3); err != nil {
-			return nil, 0, err
-		}
-		return &domain.Weapon{Title: parts[2], Damage: dmg, Durability: dur, Mass: wt}, id, nil
-	case "Armor":
-		if len(parts) != 5 {
-			return nil, 0, fmt.Errorf("armor needs 5 fields, got %d", len(parts))
-		}
-		def, e1 := strconv.Atoi(parts[3])
-		wt, e2 := strconv.ParseFloat(parts[4], 64)
-		if err := errors.Join(e1, e2); err != nil {
-			return nil, 0, err
-		}
-		return &domain.Armor{Title: parts[2], Defense: def, Mass: wt}, id, nil
-	case "Potion":
-		if len(parts) != 6 {
-			return nil, 0, fmt.Errorf("potion needs 6 fields, got %d", len(parts))
-		}
-		ch, e1 := strconv.Atoi(parts[4])
-		wt, e2 := strconv.ParseFloat(parts[5], 64)
-		if err := errors.Join(e1, e2); err != nil {
-			return nil, 0, err
-		}
-		return &domain.Potion{Title: parts[2], Effect: parts[3], Charges: ch, Mass: wt}, id, nil
-	}
-	return nil, 0, fmt.Errorf("unknown type %q", parts[1])
-}
-
-// loadFrom — общая логика загрузки из io.Reader.
+// loadFrom читает строки вида «ID|Type|field|...».
 func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	lineNo := 0
@@ -138,13 +67,25 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 		if line == "" {
 			continue
 		}
-		item, id, err := parseItemLine(line)
-		if err != nil {
-			errs = append(errs, &ParseItemError{Line: lineNo, Value: line, Err: err})
+
+		// отделяем ID от остальной строки
+		bar := strings.IndexByte(line, '|')
+		if bar < 0 {
+			errs = append(errs, &items.ParseItemError{Line: lineNo, Value: line, Err: errors.New("no id separator")})
 			continue
 		}
-		inv.Items = append(inv.Items, item)
-		inv.SetNextID(id + 1)
+		id, err := strconv.Atoi(line[:bar])
+		if err != nil {
+			errs = append(errs, &items.ParseItemError{Line: lineNo, Value: line, Err: fmt.Errorf("bad id: %w", err)})
+			continue
+		}
+
+		item, err := items.ParseItem(line[bar+1:])
+		if err != nil {
+			errs = append(errs, &items.ParseItemError{Line: lineNo, Value: line, Err: err})
+			continue
+		}
+		inv.AddWithID(id, item)
 	}
 	if err := sc.Err(); err != nil {
 		errs = append(errs, fmt.Errorf("scan: %w", err))
@@ -152,16 +93,16 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 	return errors.Join(errs...)
 }
 
-// saveTo — общая логика сохранения в io.Writer.
+// saveTo пишет «ID|SerializedItem».
 func saveTo(inv *inventory.Inventory, w io.Writer) error {
 	bw := bufio.NewWriter(w)
-	for i, item := range inv.Items {
-		line, ok := serializeItem(i+1, item)
+	for _, e := range inv.Entries() {
+		st, ok := e.Item.(items.Storable)
 		if !ok {
 			continue
 		}
-		if _, err := bw.WriteString(line); err != nil {
-			return fmt.Errorf("write item %d: %w", i+1, err)
+		if _, err := fmt.Fprintf(bw, "%d|%s\n", e.ID, st.Serialize()); err != nil {
+			return fmt.Errorf("write item %d: %w", e.ID, err)
 		}
 	}
 	if err := bw.Flush(); err != nil {
