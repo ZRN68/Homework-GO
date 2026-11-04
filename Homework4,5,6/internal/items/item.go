@@ -17,11 +17,10 @@ type Item interface {
 	Use() (string, error)
 }
 
-// Storable — предмет умеет себя сериализовать в строку файлового формата.
-// Десериализация намеренно НЕ метод: при чтении объекта ещё нет,
-// поэтому она реализована функцией-конструктором ParseItem (см. parse.go).
+// Storable — предмет умеет себя сериализовать и десериализовать.
 type Storable interface {
 	Serialize() string
+	Deserialize(s string) error
 }
 
 // Describable — предмет умеет себя описывать (без изменения состояния).

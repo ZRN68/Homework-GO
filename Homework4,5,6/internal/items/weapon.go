@@ -1,6 +1,11 @@
 package items
 
-import "fmt"
+import (
+	"errors"
+	"fmt"
+	"strconv"
+	"strings"
+)
 
 type Weapon struct {
 	Title      string
@@ -28,4 +33,23 @@ func (w *Weapon) DescribeItem() string {
 
 func (w *Weapon) Serialize() string {
 	return fmt.Sprintf("Weapon|%s|%d|%d|%g", w.Title, w.Damage, w.Durability, w.Mass)
+}
+
+func (w *Weapon) Deserialize(s string) error {
+	parts := strings.Split(s, "|")
+	if len(parts) != 5 || parts[0] != "Weapon" {
+		return errors.New("invalid weapon format")
+	}
+	var err error
+	w.Title = parts[1]
+	if w.Damage, err = strconv.Atoi(parts[2]); err != nil {
+		return err
+	}
+	if w.Durability, err = strconv.Atoi(parts[3]); err != nil {
+		return err
+	}
+	if w.Mass, err = strconv.ParseFloat(parts[4], 64); err != nil {
+		return err
+	}
+	return nil
 }

@@ -117,10 +117,17 @@ func (inv *Inventory) Find(pred func(items.Item) bool) (items.Item, bool) {
 	return Find(inv.Items(), pred)
 }
 
-func (inv *Inventory) Weapons() []items.Item {
-	return inv.Filter(func(it items.Item) bool {
+// Weapons — только оружие. Возвращает []*items.Weapon, используя Map.
+func (inv *Inventory) Weapons() []*items.Weapon {
+	// 1. Фильтруем только оружие
+	weaponsOnly := inv.Filter(func(it items.Item) bool {
 		_, ok := it.(*items.Weapon)
 		return ok
+	})
+
+	// 2. Преобразуем []items.Item в []*items.Weapon с помощью Map
+	return Map(weaponsOnly, func(it items.Item) *items.Weapon {
+		return it.(*items.Weapon) // безопасно, т.к. уже отфильтровали
 	})
 }
 
