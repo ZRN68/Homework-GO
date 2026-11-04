@@ -9,34 +9,34 @@ import (
 
 var ErrNotFound = errors.New("item not found")
 
-// Entry — запись инвентаря: ID живёт вместе с предметом,
-// а не вычисляется из позиции в слайсе.
 type Entry struct {
 	ID   int
 	Item items.Item
 }
 
-// Inventory — набор записей с уникальными ID.
 type Inventory struct {
 	entries []Entry
 	nextID  int
 }
 
-func New() *Inventory {
-	return &Inventory{nextID: 1}
-}
+func New() *Inventory { return &Inventory{nextID: 1} }
 
-// Len — количество предметов.
 func (inv *Inventory) Len() int { return len(inv.entries) }
 
-// Entries — копия списка записей (чтобы снаружи не портили инвариант).
 func (inv *Inventory) Entries() []Entry {
 	out := make([]Entry, len(inv.entries))
 	copy(out, inv.entries)
 	return out
 }
 
-// Add возвращает ID добавленного предмета.
+func (inv *Inventory) Items() []items.Item {
+	res := make([]items.Item, 0, len(inv.entries))
+	for _, e := range inv.entries {
+		res = append(res, e.Item)
+	}
+	return res
+}
+
 func (inv *Inventory) Add(item items.Item) int {
 	id := inv.nextID
 	inv.nextID++
@@ -44,7 +44,6 @@ func (inv *Inventory) Add(item items.Item) int {
 	return id
 }
 
-// AddWithID нужен хранилищу при загрузке: кладём предмет с уже известным ID.
 func (inv *Inventory) AddWithID(id int, item items.Item) {
 	inv.entries = append(inv.entries, Entry{ID: id, Item: item})
 	if id >= inv.nextID {
@@ -78,41 +77,46 @@ func (inv *Inventory) Use(id int) (string, error) {
 	return inv.entries[i].Item.Use()
 }
 
-// ---------- Filter / Map / Find ----------
+func Filter[T any](src []T, pred func(T) bool) []T {
+	var res []T
+	for _, v := range src {
+		if pred(v) {
+			res = append(res, v)
+		}
+	}
+	return res
+}
 
-// Filter возвращает предметы, удовлетворяющие предикату.
+func Map[T, R any](src []T, fn func(T) R) []R {
+	res := make([]R, 0, len(src))
+	for _, v := range src {
+		res = append(res, fn(v))
+	}
+	return res
+}
+
+func Find[T any](src []T, pred func(T) bool) (T, bool) {
+	var zero T
+	for _, v := range src {
+		if pred(v) {
+			return v, true
+		}
+	}
+	return zero, false
+}
+
 func (inv *Inventory) Filter(pred func(items.Item) bool) []items.Item {
-	var res []items.Item
-	for _, e := range inv.entries {
-		if pred(e.Item) {
-			res = append(res, e.Item)
-		}
-	}
-	return res
+	return Filter(inv.Items(), pred)
 }
 
-// Map применяет функцию к каждому предмету и возвращает результаты.
 func (inv *Inventory) Map(fn func(items.Item) items.Item) []items.Item {
-	res := make([]items.Item, 0, len(inv.entries))
-	for _, e := range inv.entries {
-		res = append(res, fn(e.Item))
-	}
-	return res
+	return Map(inv.Items(), fn)
 }
 
-// Find возвращает первый предмет, удовлетворяющий предикату.
 func (inv *Inventory) Find(pred func(items.Item) bool) (items.Item, bool) {
-	for _, e := range inv.entries {
-		if pred(e.Item) {
-			return e.Item, true
-		}
-	}
-	return nil, false
+	return Find(inv.Items(), pred)
 }
 
-// ---------- методы из ДЗ №4 ----------
-
-// Weapons — только оружие.
 func (inv *Inventory) Weapons() []items.Item {
 	return inv.Filter(func(it items.Item) bool {
 		_, ok := it.(*items.Weapon)
@@ -120,7 +124,6 @@ func (inv *Inventory) Weapons() []items.Item {
 	})
 }
 
-// BrokenItems — сломанные/исчерпанные предметы.
 func (inv *Inventory) BrokenItems() []items.Item {
 	return inv.Filter(func(it items.Item) bool {
 		switch v := it.(type) {
@@ -135,25 +138,14 @@ func (inv *Inventory) BrokenItems() []items.Item {
 	})
 }
 
-// ItemNames — имена всех предметов.
 func (inv *Inventory) ItemNames() []string {
-	res := make([]string, 0, len(inv.entries))
-	for _, e := range inv.entries {
-		res = append(res, e.Item.Name())
-	}
-	return res
+	return Map(inv.Items(), func(it items.Item) string { return it.Name() })
 }
 
-// FindItemByName — поиск предмета по точному имени.
 func (inv *Inventory) FindItemByName(name string) (items.Item, bool) {
 	return inv.Find(func(it items.Item) bool { return it.Name() == name })
 }
 
-// ---------- методы из ДЗ №5 ----------
-
-// UseDangerousItem вызывает Use и восстанавливается после паники,
-// превращая её в ошибку. Нужен для предметов, чей Use может паниковать.
-// Заодно распаковывает *items.ParseItemError через errors.As.
 func (inv *Inventory) UseDangerousItem(id int) (msg string, err error) {
 	defer func() {
 		if r := recover(); r != nil {
@@ -176,3 +168,17 @@ func (inv *Inventory) UseDangerousItem(id int) (msg string, err error) {
 	}
 	return msg, nil
 }
+
+// 1. Почему ошибка сломанного предмета не должна быть паникой?
+//    Сломанный предмет — это ожидаемая ситуация (штатная ошибка бизнес-логики),
+//    а не баг программы. Ожидаемые ошибки возвращаются через error, чтобы их
+//    можно было обработать (errors.Is(err, ErrBroken)). Паника — для
+//    неисправимых программных сбоев (nil, out of range).
+//
+// 2. Какая строка после panic не будет выполнена?
+//    Все строки функции ниже вызова panic(), включая `return`. Управление
+//    сразу перейдет к defer, где сработает recover.
+//
+// 3. Почему recover должен находиться в отложенной функции?
+//    Потому что recover работает только при прямом вызове из defer.
+//    В обычном коде он просто вернет nil, и паника продолжит раскрутку стека.

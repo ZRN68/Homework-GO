@@ -43,21 +43,20 @@ func Run(args []string, stdout, stderr io.Writer, store Storage) int {
 		return r.delete(rest)
 	default:
 		fmt.Fprintf(stderr, "error: unknown command %q\n", cmd)
+		fmt.Fprintln(stderr, "usage: inventory <list|add|use|delete> [flags]")
 		return 2
 	}
 }
 
-func (r *Runner) loadOrFail() (*inventory.Inventory, bool) {
+func (r *Runner) load() (*inventory.Inventory, error) {
 	inv, err := r.Store.Load()
 	if err != nil {
-		fmt.Fprintln(r.Stderr, "error:", err)
-		return nil, false
+		return nil, err
 	}
 	if inv == nil {
-		fmt.Fprintln(r.Stderr, "error: storage returned nil inventory")
-		return nil, false
+		return nil, errors.New("storage returned nil inventory")
 	}
-	return inv, true
+	return inv, nil
 }
 
 func (r *Runner) list(args []string) int {
@@ -71,8 +70,9 @@ func (r *Runner) list(args []string) int {
 		return 2
 	}
 
-	inv, ok := r.loadOrFail()
-	if !ok {
+	inv, err := r.load()
+	if err != nil {
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	if inv.Len() == 0 {
@@ -106,14 +106,15 @@ func (r *Runner) add(args []string) int {
 		return 2
 	}
 
-	inv, ok := r.loadOrFail()
-	if !ok {
+	inv, err := r.load()
+	if err != nil {
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	item := &items.Weapon{Title: *name, Mass: *weight, Damage: 1, Durability: 1}
 	id := inv.Add(item)
 	if err := r.Store.Save(inv); err != nil {
-		fmt.Fprintln(r.Stderr, "error:", err)
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	fmt.Fprintf(r.Stdout, "added id=%d\n", id)
@@ -131,9 +132,14 @@ func (r *Runner) use(args []string) int {
 		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
 		return 2
 	}
+	if *id <= 0 {
+		fmt.Fprintln(r.Stderr, "error: -id must be > 0")
+		return 2
+	}
 
-	inv, ok := r.loadOrFail()
-	if !ok {
+	inv, err := r.load()
+	if err != nil {
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	msg, err := inv.Use(*id)
@@ -142,7 +148,7 @@ func (r *Runner) use(args []string) int {
 		return 1
 	}
 	if err := r.Store.Save(inv); err != nil {
-		fmt.Fprintln(r.Stderr, "error:", err)
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	fmt.Fprintln(r.Stdout, msg)
@@ -160,9 +166,14 @@ func (r *Runner) delete(args []string) int {
 		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
 		return 2
 	}
+	if *id <= 0 {
+		fmt.Fprintln(r.Stderr, "error: -id must be > 0")
+		return 2
+	}
 
-	inv, ok := r.loadOrFail()
-	if !ok {
+	inv, err := r.load()
+	if err != nil {
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	if err := inv.Delete(*id); err != nil {
@@ -170,7 +181,7 @@ func (r *Runner) delete(args []string) int {
 		return 1
 	}
 	if err := r.Store.Save(inv); err != nil {
-		fmt.Fprintln(r.Stderr, "error:", err)
+		printItemError(r.Stderr, err)
 		return 1
 	}
 	fmt.Fprintf(r.Stdout, "deleted id=%d\n", *id)
