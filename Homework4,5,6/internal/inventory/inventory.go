@@ -78,39 +78,61 @@ func (inv *Inventory) Use(id int) (string, error) {
 	return inv.entries[i].Item.Use()
 }
 
-// ---------- методы из ДЗ №4 ----------
+// ---------- Filter / Map / Find ----------
 
-// Weapons — только оружие.
-func (inv *Inventory) Weapons() []items.Item {
+// Filter возвращает предметы, удовлетворяющие предикату.
+func (inv *Inventory) Filter(pred func(items.Item) bool) []items.Item {
 	var res []items.Item
 	for _, e := range inv.entries {
-		if _, ok := e.Item.(*items.Weapon); ok {
+		if pred(e.Item) {
 			res = append(res, e.Item)
 		}
 	}
 	return res
 }
 
-// BrokenItems — сломанные/исчерпанные предметы.
-func (inv *Inventory) BrokenItems() []items.Item {
-	var res []items.Item
+// Map применяет функцию к каждому предмету и возвращает результаты.
+func (inv *Inventory) Map(fn func(items.Item) items.Item) []items.Item {
+	res := make([]items.Item, 0, len(inv.entries))
 	for _, e := range inv.entries {
-		switch v := e.Item.(type) {
-		case *items.Weapon:
-			if v.Durability <= 0 {
-				res = append(res, e.Item)
-			}
-		case *items.Armor:
-			if v.Broken {
-				res = append(res, e.Item)
-			}
-		case *items.Potion:
-			if v.Charges <= 0 {
-				res = append(res, e.Item)
-			}
-		}
+		res = append(res, fn(e.Item))
 	}
 	return res
+}
+
+// Find возвращает первый предмет, удовлетворяющий предикату.
+func (inv *Inventory) Find(pred func(items.Item) bool) (items.Item, bool) {
+	for _, e := range inv.entries {
+		if pred(e.Item) {
+			return e.Item, true
+		}
+	}
+	return nil, false
+}
+
+// ---------- методы из ДЗ №4 ----------
+
+// Weapons — только оружие.
+func (inv *Inventory) Weapons() []items.Item {
+	return inv.Filter(func(it items.Item) bool {
+		_, ok := it.(*items.Weapon)
+		return ok
+	})
+}
+
+// BrokenItems — сломанные/исчерпанные предметы.
+func (inv *Inventory) BrokenItems() []items.Item {
+	return inv.Filter(func(it items.Item) bool {
+		switch v := it.(type) {
+		case *items.Weapon:
+			return v.Durability <= 0
+		case *items.Armor:
+			return v.Broken
+		case *items.Potion:
+			return v.Charges <= 0
+		}
+		return false
+	})
 }
 
 // ItemNames — имена всех предметов.
@@ -124,10 +146,33 @@ func (inv *Inventory) ItemNames() []string {
 
 // FindItemByName — поиск предмета по точному имени.
 func (inv *Inventory) FindItemByName(name string) (items.Item, bool) {
-	for _, e := range inv.entries {
-		if e.Item.Name() == name {
-			return e.Item, true
+	return inv.Find(func(it items.Item) bool { return it.Name() == name })
+}
+
+// ---------- методы из ДЗ №5 ----------
+
+// UseDangerousItem вызывает Use и восстанавливается после паники,
+// превращая её в ошибку. Нужен для предметов, чей Use может паниковать.
+// Заодно распаковывает *items.ParseItemError через errors.As.
+func (inv *Inventory) UseDangerousItem(id int) (msg string, err error) {
+	defer func() {
+		if r := recover(); r != nil {
+			err = fmt.Errorf("panic during use id %d: %v", id, r)
 		}
+	}()
+
+	i, ferr := inv.findIndex(id)
+	if ferr != nil {
+		return "", ferr
 	}
-	return nil, false
+
+	msg, uerr := inv.entries[i].Item.Use()
+	if uerr != nil {
+		var pie *items.ParseItemError
+		if errors.As(uerr, &pie) {
+			return "", fmt.Errorf("parse error at line %d (%q): %w", pie.Line, pie.Value, uerr)
+		}
+		return "", uerr
+	}
+	return msg, nil
 }

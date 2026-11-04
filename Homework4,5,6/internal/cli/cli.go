@@ -25,10 +25,12 @@ type Runner struct {
 
 func Run(args []string, stdout, stderr io.Writer, store Storage) int {
 	r := &Runner{Store: store, Stdout: stdout, Stderr: stderr}
+
 	if len(args) == 0 {
 		fmt.Fprintln(stderr, "usage: inventory <list|add|use|delete> [flags]")
 		return 2
 	}
+
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "list":
@@ -40,7 +42,7 @@ func Run(args []string, stdout, stderr io.Writer, store Storage) int {
 	case "delete":
 		return r.delete(rest)
 	default:
-		fmt.Fprintf(stderr, "unknown command %q\n", cmd)
+		fmt.Fprintf(stderr, "error: unknown command %q\n", cmd)
 		return 2
 	}
 }
@@ -64,6 +66,11 @@ func (r *Runner) list(args []string) int {
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
+	if fs.NArg() > 0 {
+		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
+		return 2
+	}
+
 	inv, ok := r.loadOrFail()
 	if !ok {
 		return 1
@@ -81,12 +88,15 @@ func (r *Runner) list(args []string) int {
 func (r *Runner) add(args []string) int {
 	fs := flag.NewFlagSet("add", flag.ContinueOnError)
 	fs.SetOutput(r.Stderr)
-	name := fs.String("name", "", "имя предмета")
-	weight := fs.Float64("weight", 0, "вес")
+	name := fs.String("name", "", "item name")
+	weight := fs.Float64("weight", 0, "item weight")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-
+	if fs.NArg() > 0 {
+		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
+		return 2
+	}
 	if err := validateName(*name); err != nil {
 		fmt.Fprintln(r.Stderr, "error:", err)
 		return 2
@@ -100,26 +110,25 @@ func (r *Runner) add(args []string) int {
 	if !ok {
 		return 1
 	}
-
 	item := &items.Weapon{Title: *name, Mass: *weight, Damage: 1, Durability: 1}
 	id := inv.Add(item)
 	if err := r.Store.Save(inv); err != nil {
 		fmt.Fprintln(r.Stderr, "error:", err)
 		return 1
 	}
-	fmt.Fprintf(r.Stdout, "added id=%d %s\n", id, *name)
+	fmt.Fprintf(r.Stdout, "added id=%d\n", id)
 	return 0
 }
 
 func (r *Runner) use(args []string) int {
 	fs := flag.NewFlagSet("use", flag.ContinueOnError)
 	fs.SetOutput(r.Stderr)
-	id := fs.Int("id", 0, "id предмета")
+	id := fs.Int("id", 0, "item id")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *id <= 0 {
-		fmt.Fprintln(r.Stderr, "error: -id is required")
+	if fs.NArg() > 0 {
+		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
 		return 2
 	}
 
@@ -127,7 +136,6 @@ func (r *Runner) use(args []string) int {
 	if !ok {
 		return 1
 	}
-
 	msg, err := inv.Use(*id)
 	if err != nil {
 		printItemError(r.Stderr, err)
@@ -144,12 +152,12 @@ func (r *Runner) use(args []string) int {
 func (r *Runner) delete(args []string) int {
 	fs := flag.NewFlagSet("delete", flag.ContinueOnError)
 	fs.SetOutput(r.Stderr)
-	id := fs.Int("id", 0, "id предмета")
+	id := fs.Int("id", 0, "item id")
 	if err := fs.Parse(args); err != nil {
 		return 2
 	}
-	if *id <= 0 {
-		fmt.Fprintln(r.Stderr, "error: -id is required")
+	if fs.NArg() > 0 {
+		fmt.Fprintf(r.Stderr, "error: unexpected arguments: %v\n", fs.Args())
 		return 2
 	}
 
@@ -157,7 +165,6 @@ func (r *Runner) delete(args []string) int {
 	if !ok {
 		return 1
 	}
-
 	if err := inv.Delete(*id); err != nil {
 		printItemError(r.Stderr, err)
 		return 1

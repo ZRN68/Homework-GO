@@ -1,6 +1,9 @@
 package items
 
-import "errors"
+import (
+	"errors"
+	"reflect"
+)
 
 var (
 	ErrBroken    = errors.New("item is broken")
@@ -15,6 +18,8 @@ type Item interface {
 }
 
 // Storable — предмет умеет себя сериализовать в строку файлового формата.
+// Десериализация намеренно НЕ метод: при чтении объекта ещё нет,
+// поэтому она реализована функцией-конструктором ParseItem (см. parse.go).
 type Storable interface {
 	Serialize() string
 }
@@ -22,6 +27,21 @@ type Storable interface {
 // Describable — предмет умеет себя описывать (без изменения состояния).
 type Describable interface {
 	DescribeItem() string
+}
+
+// Describe — общий дескрайб с проверкой nil и typed nil.
+func Describe(it Item) string {
+	if it == nil {
+		return "<nil item>"
+	}
+	v := reflect.ValueOf(it)
+	if v.Kind() == reflect.Ptr && v.IsNil() {
+		return "<nil item>"
+	}
+	if d, ok := it.(Describable); ok {
+		return d.DescribeItem()
+	}
+	return it.Name()
 }
 
 // compile-time проверки

@@ -60,6 +60,7 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	lineNo := 0
 	var errs []error
+	seen := make(map[int]struct{}) // уже загруженные ID — для проверки уникальности
 
 	for sc.Scan() {
 		lineNo++
@@ -80,11 +81,20 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 			continue
 		}
 
+		// уникальность ID: дубликат — ошибка, строка пропускается
+		if _, dup := seen[id]; dup {
+			errs = append(errs, &items.ParseItemError{
+				Line: lineNo, Value: line, Err: fmt.Errorf("duplicate id %d", id),
+			})
+			continue
+		}
+
 		item, err := items.ParseItem(line[bar+1:])
 		if err != nil {
 			errs = append(errs, &items.ParseItemError{Line: lineNo, Value: line, Err: err})
 			continue
 		}
+		seen[id] = struct{}{}
 		inv.AddWithID(id, item)
 	}
 	if err := sc.Err(); err != nil {
