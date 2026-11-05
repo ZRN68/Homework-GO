@@ -11,16 +11,20 @@ import (
 )
 
 type mockStorage struct {
-	inv     *inventory.Inventory
-	loadErr error
-	saveErr error
+	inv       *inventory.Inventory
+	loadErr   error
+	saveErr   error
+	loadCount int // Счётчик вызовов Load
+	saveCount int // Счётчик вызовов Save
 }
 
 func (m *mockStorage) Load() (*inventory.Inventory, error) {
+	m.loadCount++
 	return m.inv, m.loadErr
 }
 
 func (m *mockStorage) Save(inv *inventory.Inventory) error {
+	m.saveCount++
 	m.inv = inv
 	return m.saveErr
 }
@@ -114,6 +118,7 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 	mock := &mockStorage{inv: inventory.New()}
 	var stdout, stderr bytes.Buffer
 
+	// 1. Тест ADD
 	code := Run([]string{"add", "-name", "Меч", "-weight", "3.5"}, &stdout, &stderr, mock)
 	if code != 0 {
 		t.Fatalf("add failed with code %d, stderr: %s", code, stderr.String())
@@ -124,9 +129,14 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 	if mock.inv.Len() != 1 {
 		t.Errorf("mock inventory not updated after add")
 	}
+	if mock.saveCount != 1 {
+		t.Errorf("Save() was not called after add, count = %d", mock.saveCount)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
+	mock.saveCount = 0 // сбрасываем счётчик перед следующим вызовом
+
 	code = Run([]string{"use", "-id", "1"}, &stdout, &stderr, mock)
 	if code != 0 {
 		t.Fatalf("use failed with code %d, stderr: %s", code, stderr.String())
@@ -134,9 +144,14 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 	if !strings.Contains(stdout.String(), "Используется Меч") {
 		t.Errorf("use output wrong: %s", stdout.String())
 	}
+	if mock.saveCount != 1 {
+		t.Errorf("Save() was not called after use, count = %d", mock.saveCount)
+	}
 
 	stdout.Reset()
 	stderr.Reset()
+	mock.saveCount = 0
+
 	code = Run([]string{"delete", "-id", "1"}, &stdout, &stderr, mock)
 	if code != 0 {
 		t.Fatalf("delete failed with code %d, stderr: %s", code, stderr.String())
@@ -146,6 +161,9 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 	}
 	if mock.inv.Len() != 0 {
 		t.Errorf("mock inventory not updated after delete")
+	}
+	if mock.saveCount != 1 {
+		t.Errorf("Save() was not called after delete, count = %d", mock.saveCount)
 	}
 }
 

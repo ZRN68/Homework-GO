@@ -17,9 +17,13 @@ func TestFileStorage_SaveLoad(t *testing.T) {
 	store := NewFile(path)
 
 	inv := inventory.New()
-	inv.Add(&items.Weapon{Title: "Меч", Mass: 3.5, Damage: 10, Durability: 5})
-	inv.Add(&items.Armor{Title: "Щит", Mass: 8, Defense: 15})
-	inv.Add(&items.Potion{Title: "Зелье", Mass: 0.5, Effect: "HP", Charges: 2})
+	w := &items.Weapon{Title: "Меч", Mass: 3.5, Damage: 10, Durability: 5}
+	a := &items.Armor{Title: "Щит", Mass: 8, Defense: 15, Broken: true}
+	p := &items.Potion{Title: "Зелье", Mass: 0.5, Effect: "HP", Charges: 2}
+
+	idW := inv.Add(w)
+	idA := inv.Add(a)
+	idP := inv.Add(p)
 
 	if err := store.Save(inv); err != nil {
 		t.Fatalf("Save error: %v", err)
@@ -40,8 +44,34 @@ func TestFileStorage_SaveLoad(t *testing.T) {
 	}
 
 	entries := loadedInv.Entries()
-	if w, ok := entries[0].Item.(*items.Weapon); !ok || w.Title != "Меч" {
-		t.Errorf("weapon loaded incorrectly")
+
+	loadedW, ok := entries[0].Item.(*items.Weapon)
+	if !ok || entries[0].ID != idW {
+		t.Fatalf("weapon ID or type loaded incorrectly, got ID %d", entries[0].ID)
+	}
+	if *loadedW != *w {
+		t.Errorf("weapon fields mismatch: got %+v, want %+v", loadedW, w)
+	}
+
+	loadedA, ok := entries[1].Item.(*items.Armor)
+	if !ok || entries[1].ID != idA {
+		t.Fatalf("armor ID or type loaded incorrectly, got ID %d", entries[1].ID)
+	}
+	if *loadedA != *a {
+		t.Errorf("armor fields mismatch: got %+v, want %+v", loadedA, a)
+	}
+
+	loadedP, ok := entries[2].Item.(*items.Potion)
+	if !ok || entries[2].ID != idP {
+		t.Fatalf("potion ID or type loaded incorrectly, got ID %d", entries[2].ID)
+	}
+	if *loadedP != *p {
+		t.Errorf("potion fields mismatch: got %+v, want %+v", loadedP, p)
+	}
+
+	newID := loadedInv.Add(&items.Weapon{Title: "Новый"})
+	if newID != 4 {
+		t.Errorf("next ID after load = %d, want 4", newID)
 	}
 }
 
@@ -81,7 +111,22 @@ func TestFileStorage_LoadCorruptedAndDuplicates(t *testing.T) {
 
 	var target *items.ParseItemError
 	if !errors.As(err, &target) {
-		t.Errorf("expected ParseItemError, got %T", err)
+		t.Fatalf("expected ParseItemError, got %T", err)
+	}
+
+	if target.Line != 2 {
+		t.Errorf("ParseItemError Line = %d, want 2", target.Line)
+	}
+	if !strings.Contains(target.Value, "Armor") {
+		t.Errorf("ParseItemError Value = %q, want contains 'Armor'", target.Value)
+	}
+
+	if !errors.Is(target.Err, target.Err) {
+		t.Errorf("Unwrap() does not work")
+	}
+
+	if !strings.Contains(target.Err.Error(), "duplicate id") {
+		t.Errorf("underlying error = %q, want contains 'duplicate id'", target.Err.Error())
 	}
 }
 

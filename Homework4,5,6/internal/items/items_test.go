@@ -166,22 +166,60 @@ func TestItemGettersAndSerialize(t *testing.T) {
 
 func TestParseItem(t *testing.T) {
 	tests := []struct {
-		name    string
-		line    string
-		wantErr bool
+		name     string
+		line     string
+		wantErr  bool
+		checkObj func(Item) bool
 	}{
-		{"valid weapon", "Weapon|Меч|10|5|3.5", false},
-		{"valid armor", "Armor|Щит|15|0|8", false},
-		{"valid potion", "Potion|Зелье|HP|2|0.5", false},
-		{"unknown type", "Sword|Меч|10|5|3.5", true},
-		{"too few fields", "Weapon", true},
+		{
+			name:    "valid weapon",
+			line:    "Weapon|Меч|10|5|3.5",
+			wantErr: false,
+			checkObj: func(i Item) bool {
+				w, ok := i.(*Weapon)
+				return ok && w.Title == "Меч" && w.Damage == 10 && w.Durability == 5 && w.Mass == 3.5
+			},
+		},
+		{
+			name:    "valid armor",
+			line:    "Armor|Щит|15|1|8",
+			wantErr: false,
+			checkObj: func(i Item) bool {
+				a, ok := i.(*Armor)
+				return ok && a.Title == "Щит" && a.Defense == 15 && a.Broken == true && a.Mass == 8.0
+			},
+		},
+		{
+			name:    "valid potion",
+			line:    "Potion|Зелье|HP|2|0.5",
+			wantErr: false,
+			checkObj: func(i Item) bool {
+				p, ok := i.(*Potion)
+				return ok && p.Title == "Зелье" && p.Effect == "HP" && p.Charges == 2 && p.Mass == 0.5
+			},
+		},
+
+		{"unknown type", "Sword|Меч|10|5|3.5", true, nil},
+		{"too few fields", "Weapon", true, nil},
+		{"bad weapon damage", "Weapon|Меч|abc|5|3.5", true, nil},
+		{"bad weapon durability", "Weapon|Меч|10|abc|3.5", true, nil},
+		{"bad weapon mass", "Weapon|Меч|10|5|abc", true, nil},
+		{"bad armor defense", "Armor|Щит|abc|0|8", true, nil},
+		{"bad potion charges", "Potion|Зелье|HP|abc|0.5", true, nil},
 	}
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			_, err := ParseItem(tt.line)
+			item, err := ParseItem(tt.line)
+
 			if (err != nil) != tt.wantErr {
-				t.Errorf("ParseItem() err = %v, wantErr %v", err, tt.wantErr)
+				t.Fatalf("ParseItem() err = %v, wantErr %v", err, tt.wantErr)
+			}
+
+			if !tt.wantErr && tt.checkObj != nil {
+				if !tt.checkObj(item) {
+					t.Errorf("ParseItem() returned incorrect object fields: %+v", item)
+				}
 			}
 		})
 	}
