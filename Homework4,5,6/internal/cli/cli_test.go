@@ -14,8 +14,8 @@ type mockStorage struct {
 	inv       *inventory.Inventory
 	loadErr   error
 	saveErr   error
-	loadCount int // Счётчик вызовов Load
-	saveCount int // Счётчик вызовов Save
+	loadCount int
+	saveCount int
 }
 
 func (m *mockStorage) Load() (*inventory.Inventory, error) {
@@ -133,9 +133,10 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 		t.Errorf("Save() was not called after add, count = %d", mock.saveCount)
 	}
 
+	// 2. Тест USE
 	stdout.Reset()
 	stderr.Reset()
-	mock.saveCount = 0 // сбрасываем счётчик перед следующим вызовом
+	mock.saveCount = 0
 
 	code = Run([]string{"use", "-id", "1"}, &stdout, &stderr, mock)
 	if code != 0 {
@@ -148,6 +149,7 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 		t.Errorf("Save() was not called after use, count = %d", mock.saveCount)
 	}
 
+	// 3. Тест DELETE
 	stdout.Reset()
 	stderr.Reset()
 	mock.saveCount = 0
@@ -164,6 +166,49 @@ func TestRun_CLI_SuccessOperations(t *testing.T) {
 	}
 	if mock.saveCount != 1 {
 		t.Errorf("Save() was not called after delete, count = %d", mock.saveCount)
+	}
+}
+
+// НОВЫЙ ТЕСТ: проверка отказов Save
+func TestRun_CLI_SaveErrors(t *testing.T) {
+	tests := []struct {
+		name string
+		args []string
+	}{
+		{"add save error", []string{"add", "-name", "Меч", "-weight", "3.5"}},
+		{"use save error", []string{"use", "-id", "1"}},
+		{"delete save error", []string{"delete", "-id", "1"}},
+	}
+
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			// Подготавливаем инвентарь, чтобы use и delete нашли предмет
+			inv := inventory.New()
+			inv.Add(&items.Weapon{Title: "Меч", Mass: 1, Durability: 5})
+
+			mock := &mockStorage{
+				inv:     inv,
+				saveErr: errors.New("disk full"), // Имитируем ошибку записи
+			}
+			var stdout, stderr bytes.Buffer
+
+			code := Run(tt.args, &stdout, &stderr, mock)
+
+			// Проверяем код возврата (должна быть операционная ошибка = 1)
+			if code != 1 {
+				t.Errorf("expected code 1 on Save error, got %d", code)
+			}
+
+			// Проверяем, что ошибка попала в stderr
+			if !strings.Contains(stderr.String(), "disk full") {
+				t.Errorf("stderr missing save error, got: %s", stderr.String())
+			}
+
+			// Проверяем, что в stdout НЕТ сообщения об успехе
+			if stdout.String() != "" {
+				t.Errorf("expected empty stdout on Save error, got: %s", stdout.String())
+			}
+		})
 	}
 }
 

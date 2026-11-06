@@ -121,10 +121,9 @@ func TestFileStorage_LoadCorruptedAndDuplicates(t *testing.T) {
 		t.Errorf("ParseItemError Value = %q, want contains 'Armor'", target.Value)
 	}
 
-	if !errors.Is(target.Err, target.Err) {
-		t.Errorf("Unwrap() does not work")
+	if target.Err == nil {
+		t.Fatalf("ParseItemError.Err is nil, Unwrap is broken")
 	}
-
 	if !strings.Contains(target.Err.Error(), "duplicate id") {
 		t.Errorf("underlying error = %q, want contains 'duplicate id'", target.Err.Error())
 	}
