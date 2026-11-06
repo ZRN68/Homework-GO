@@ -2,6 +2,7 @@ package inventory
 
 import (
 	"errors"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -125,5 +126,29 @@ func TestInventoryMore(t *testing.T) {
 	}
 	if _, err := inv.Use(99); !errors.Is(err, ErrNotFound) {
 		t.Errorf("Use() want ErrNotFound, got %v", err)
+	}
+}
+
+func prepareInventory() *Inventory {
+	inv := New()
+	for i := 0; i < 10000; i++ {
+		inv.Add(&items.Weapon{Title: fmt.Sprintf("Меч-%d", i)})
+	}
+	return inv
+}
+
+func BenchmarkManualFind(b *testing.B) {
+	inv := prepareInventory()
+	for b.Loop() {
+		_, _ = inv.FindItemByName("Несуществующий")
+	}
+}
+
+func BenchmarkGenericFind(b *testing.B) {
+	inv := prepareInventory()
+	for b.Loop() {
+		_, _ = inv.Find(func(it items.Item) bool {
+			return it.Name() == "Несуществующий"
+		})
 	}
 }
