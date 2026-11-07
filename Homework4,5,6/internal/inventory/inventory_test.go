@@ -140,7 +140,11 @@ func prepareInventory() *Inventory {
 func BenchmarkManualFind(b *testing.B) {
 	inv := prepareInventory()
 	for b.Loop() {
-		_, _ = inv.FindItemByName("Несуществующий")
+		for _, e := range inv.entries {
+			if e.Item.Name() == "Несуществующий" {
+				break
+			}
+		}
 	}
 }
 
