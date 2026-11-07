@@ -13,7 +13,8 @@ import (
 	"homework6/internal/items"
 )
 
-// FileStorage — файловое хранилище.
+var ErrDuplicateID = errors.New("duplicate id")
+
 type FileStorage struct {
 	Path string
 }
@@ -28,7 +29,6 @@ func (s *FileStorage) Load() (*inventory.Inventory, error) {
 		if errors.Is(err, os.ErrNotExist) {
 			return inv, nil
 		}
-		// ВАЖНО: возвращаем не-nil инвентарь, чтобы cli не упал в panic.
 		return inv, fmt.Errorf("open %s: %w", s.Path, err)
 	}
 	defer f.Close()
@@ -55,12 +55,11 @@ func (s *FileStorage) Save(inv *inventory.Inventory) (err error) {
 	return nil
 }
 
-// loadFrom читает строки вида «ID|Type|field|...».
 func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 	sc := bufio.NewScanner(r)
 	lineNo := 0
 	var errs []error
-	seen := make(map[int]struct{}) // уже загруженные ID — для проверки уникальности
+	seen := make(map[int]struct{})
 
 	for sc.Scan() {
 		lineNo++
@@ -69,7 +68,6 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 			continue
 		}
 
-		// отделяем ID от остальной строки
 		bar := strings.IndexByte(line, '|')
 		if bar < 0 {
 			errs = append(errs, &items.ParseItemError{Line: lineNo, Value: line, Err: errors.New("no id separator")})
@@ -81,10 +79,9 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 			continue
 		}
 
-		// уникальность ID: дубликат — ошибка, строка пропускается
 		if _, dup := seen[id]; dup {
 			errs = append(errs, &items.ParseItemError{
-				Line: lineNo, Value: line, Err: fmt.Errorf("duplicate id %d", id),
+				Line: lineNo, Value: line, Err: fmt.Errorf("%w %d", ErrDuplicateID, id),
 			})
 			continue
 		}
@@ -103,7 +100,6 @@ func loadFrom(inv *inventory.Inventory, r io.Reader) error {
 	return errors.Join(errs...)
 }
 
-// saveTo пишет «ID|SerializedItem».
 func saveTo(inv *inventory.Inventory, w io.Writer) error {
 	bw := bufio.NewWriter(w)
 	for _, e := range inv.Entries() {
